@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Security Operations Center</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+async function refreshData(){
+    document.getElementById("total").innerText = "...";
+    document.getElementById("ips").innerText = "...";
+    await load();
+}
+</script>
+<style>
+body {
+    background: #0b0f14;
+    color: #e6edf3;
+    font-family: 'Segoe UI';
+}
+
+h1 {
+    text-align: center;
+    color: #00ffcc;
+    text-shadow: 0 0 10px #00ffcc;
+}
+
+.container {
+    width: 95%;
+    margin: auto;
+}
+
+.cards {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.card {
+    flex: 1;
+    background: #111827;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 0 15px rgba(0,255,200,0.1);
+    text-align: center;
+}
+
+.card h2 {
+    margin: 0;
+    color: #00ffcc;
+}
+
+.table-box {
+    background: #111827;
+    padding: 15px;
+    border-radius: 12px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 10px;
+    border-bottom: 1px solid #30363d;
+}
+
+tr:hover {
+    background: #1c2430;
+}
+
+button {
+    background: #00ffcc;
+    border: none;
+    padding: 6px 12px;
+    color: black;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.export {
+    margin-top: 10px;
+    display: inline-block;
+    color: #00ffcc;
+}
+
+.ai-box {
+    background: #111827;
+    padding: 15px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    box-shadow: 0 0 15px rgba(255,0,0,0.1);
+}
+
+.ai-title {
+    color: #ff4d4d;
+    margin-bottom: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🛡 Security Operations Center</h1>
+
+<div class="container">
+<div style="text-align:center; margin-bottom:15px;">
+    <button onclick="refreshData()" style="background:#ff9800; color:black; padding:8px 15px; border-radius:6px;">
+        🔄 Refresh Data
+    </button>
+</div>
+<div class="cards">
+    <div class="card">
+        <h2 id="total">0</h2>
+        <p>Total Attacks</p>
+    </div>
+
+    <div class="card">
+        <h2 id="ips">0</h2>
+        <p>Unique Attackers</p>
+    </div>
+</div>
+
+<div class="ai-box">
+    <h3 class="ai-title">🧠 AI Threat Analysis</h3>
+    <div id="ai"></div>
+</div>
+
+<div class="card">
+    <canvas id="chart"></canvas>
+</div>
+
+<div class="table-box">
+<table id="attackTable">
+</table>
+
+<a class="export" href="/export">⬇ Download Report</a>
+</div>
+
+</div>
+
+<script>
+let chart;
+
+async function load(){
+    let res = await fetch('/api/data');
+    let data = await res.json();
+
+    let labels = Object.keys(data);
+    let values = labels.map(ip => data[ip].count);
+
+    document.getElementById("ips").innerText = labels.length;
+    document.getElementById("total").innerText =
+        values.reduce((a,b)=>a+b,0);
+
+    // 🔥 Build Table (WITH BUTTON)
+    let tableHTML = `
+    <tr>
+        <th>IP Address</th>
+        <th>Attempts</th>
+        <th>Action</th>
+    </tr>`;
+
+    for(let ip in data){
+        tableHTML += `
+        <tr>
+            <td>${ip}</td>
+            <td>${data[ip].count}</td>
+            <td>
+                <a href="/attacker/${ip}">
+                    <button>Investigate</button>
+                </a>
+            </td>
+        </tr>`;
+    }
+
+    document.getElementById("attackTable").innerHTML = tableHTML;
+
+    // 🔥 AI SUMMARY
+    let aiSummary = {};
+    let total = 0;
+
+    for(let ip in data){
+        total += data[ip].count;
+
+        data[ip].logs.forEach(log => {
+            aiSummary[log.type] = (aiSummary[log.type] || 0) + 1;
+        });
+    }
+
+    let aiHTML = "";
+
+    for(let type in aiSummary){
+        aiHTML += `<div>⚠️ ${type}: ${aiSummary[type]}</div>`;
+    }
+
+    if(total > 50){
+        aiHTML = "🚨 High Attack Activity Detected<br>" + aiHTML;
+    }
+
+    if(total === 0){
+        aiHTML = "🟢 No Threat Detected";
+    }
+
+    document.getElementById("ai").innerHTML = aiHTML;
+
+    // 🔥 Chart
+    if(chart) chart.destroy();
+
+    chart = new Chart(document.getElementById("chart"), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Attacks',
+                data: values
+            }]
+        }
+    });
+}
+
+// ❌ NO AUTO REFRESH
+// setInterval(load, 5000);
+
+// ✅ LOAD ONLY ONCE
+load();
+</script>
+
+</body>
+</html>

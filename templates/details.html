@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Attacker Analysis</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+async function refreshData(){
+    document.getElementById("total").innerText = "...";
+    document.getElementById("ips").innerText = "...";
+    await load();
+}
+</script>
+<style>
+body {
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: 'Segoe UI';
+}
+
+h1 {
+    color: #ff7b72;
+}
+
+.container {
+    width: 95%;
+    margin: auto;
+}
+
+.card {
+    background: #161b22;
+    padding: 20px;
+    margin: 15px 0;
+    border-radius: 12px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 10px;
+    border-bottom: 1px solid #30363d;
+}
+
+tr:hover {
+    background: #21262d;
+}
+
+/* Severity Colors */
+.high { color: #ff4d4d; }
+.medium { color: #f0ad4e; }
+.low { color: #2ecc71; }
+
+.back {
+    color: #58a6ff;
+    text-decoration: none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+<div style="text-align:center; margin-bottom:15px;">
+    <button onclick="refreshData()" style="background:#ff9800; color:black; padding:8px 15px; border-radius:6px;">
+        🔄 Refresh Data
+    </button>
+</div>
+<a href="/dashboard" class="back">⬅ Back</a>
+
+<h1>👾 Attacker: {{ ip }}</h1>
+<p>🌍 Location: {{ location.country }}</p>
+
+<div class="card">
+<canvas id="timeline"></canvas>
+</div>
+
+<div class="card">
+<canvas id="types"></canvas>
+</div>
+
+<div class="card">
+<iframe width="100%" height="300"
+src="https://maps.google.com/maps?q={{location.lat}},{{location.lon}}&z=5&output=embed">
+</iframe>
+</div>
+
+<div class="card">
+<table>
+<tr>
+<th>Time</th>
+<th>Payload</th>
+<th>Type</th>
+<th>Severity</th>
+<th>Source</th>
+</tr>
+
+{% for log in data.logs %}
+<tr>
+<td>{{ log.time }}</td>
+<td>{{ log.payload }}</td>
+<td>{{ log.type }}</td>
+
+<td class="
+{% if log.severity == 'HIGH' %}high
+{% elif log.severity == 'MEDIUM' %}medium
+{% else %}low
+{% endif %}
+">
+{{ log.severity }}
+</td>
+
+<td>{{ log.source }}</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+
+</div>
+
+<script>
+let logs = {{ data.logs|tojson }};
+
+// TIMELINE
+let times = logs.map(l => l.time);
+let count = logs.map((_,i)=>i+1);
+
+new Chart(document.getElementById("timeline"), {
+type:'line',
+data:{labels:times,datasets:[{label:"Attack Timeline",data:count}]}
+});
+
+// TYPE DISTRIBUTION
+let t={};
+logs.forEach(l=>t[l.type]=(t[l.type]||0)+1);
+
+new Chart(document.getElementById("types"), {
+type:'doughnut',
+data:{labels:Object.keys(t),datasets:[{data:Object.values(t)}]}
+});
+</script>
+
+</body>
+</html>
