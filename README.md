@@ -1,126 +1,68 @@
-🛡️ Sentinel-Trap: Hybrid Honeypot & IDS Dashboard
+# 🛡️ Sentinel-Trap: Hybrid Honeypot & IDS Dashboard
 
-Sentinel-Trap is a multi-vector Honeypot and Intrusion Detection System (IDS). It simulates vulnerable services to lure attackers, captures their behavior through advanced fingerprinting, and provides a real-time visual dashboard for threat intelligence.
+[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/Flask-3.0.3-000000.svg?style=for-the-badge&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-🚀 Key Features
-🕸️ Honeypot (The Trap)
-Multi-Protocol Simulation: Mimics HTTP, FTP (port 2121), and Telnet (port 2323) to catch diverse attack vectors.
+[cite_start]**Sentinel-Trap** is a sophisticated multi-vector **Honeypot** and **Intrusion Detection System (IDS)**. [cite_start]It simulates vulnerable services to lure attackers, captures their behavior through advanced fingerprinting, and provides a real-time visual dashboard for threat intelligence.
 
-Intelligent Security Engine: Uses regex pattern matching to identify SQL Injection, XSS, Path Traversal, and Command Injection.
+---
 
-Unique Fingerprinting: Generates MD5 hashes based on IP, User-Agent, and timestamps to track attacker identity across sessions.
+## 🚀 Key Features
 
-Automated Logging: Captures detailed event data including severity levels (CRITICAL to INFO) and raw payloads.
+### 🕸️ Honeypot (The Trap)
+* **Multi-Protocol Simulation**: Mimics HTTP, FTP (port 2121), and Telnet (port 2323) to catch diverse attack vectors.
+* **Intelligent Security Engine**: Uses regex pattern matching to identify SQL Injection, XSS, Path Traversal, and Command Injection.
+* **Unique Fingerprinting**: Generates MD5 hashes based on IP, User-Agent, and timestamps to track attacker identity.
+* **Automated Logging**: Captures detailed event data including severity levels (CRITICAL to INFO) and raw payloads.
 
-📊 IDS Dashboard (The Watchtower)
+### 📊 IDS Dashboard (The Watchtower)
+* **Real-time Visualization**: Displays attacker IPs, attack counts, and session details in a clean web interface.
+* **Geo-IP Integration**: Automatically identifies the city and country of attackers using the IP-API service.
+* **Payload Cleaning**: Intelligently parses raw attack data to extract human-readable credentials, such as `username:password`.
+* **Multi-Format Reporting**: Generates professional attack summaries in **PDF**, **HTML**, or **TXT** formats.
 
-Real-time Visualization: Displays attacker IPs, attack counts, and session details in a clean web interface.   
+---
 
+## 🛠️ Tech Stack
 
-Geo-IP Integration: Automatically identifies the city and country of attackers using the IP-API service.   
+| Component | Technology |
+| :--- | :--- |
+| **Backend** | [cite_start]Python 3, Flask  |
+| **Protocols** | Pyftpdlib (FTP), Socket (Telnet) |
+| **Reporting** | [cite_start]ReportLab (PDF generation)  |
+| **Security** | MD5 Hashing, Regex Pattern Matching |
+| **Data** | [cite_start]JSON-based flat-file logging  |
 
+---
+## 🔍 Architecture Overview
 
-Payload Cleaning: Intelligently parses raw attack data to extract human-readable credentials (e.g., username:password).   
+* honeypot.py: The "Sensor" that listens for incoming connections and evaluates risk levels using a custom SecurityEngine.
 
+* dashboard.py: The "Brain" that aggregates logs.txt, performs forensic analysis, and manages the reporting API.  
 
-Multi-Format Reporting: Generates professional attack summaries in PDF, HTML, or TXT formats.
+* logs.txt: The centralized database where all captured attack JSON objects are stored.
 
-Component,Technology
-Backend,"Python 3, Flask "
-Protocols,"Pyftpdlib (FTP), Socket (Telnet)"
-Reporting,ReportLab (PDF generation) 
-Security,"MD5 Hashing, Regex Pattern Matching"
-Data,JSON-based flat-file logging 
+## 📋 Security Signatures
 
+* The system monitors for several critical attack patterns:
 
-To make your README look professional and modern, you can use these Markdown blocks. Copy and paste the sections below directly into your README.md file.
+* SQL Injection: Detects SELECT, UNION, DROP, and other SQL keywords.
 
-🛡️ Sentinel-Trap: Hybrid Honeypot & IDS Dashboard
+* XSS: Identifies <script> tags, javascript: calls, and alert functions.
 
-  
+* Path Traversal: Flags attempts to access sensitive directories like /etc/ or /bin/.
 
-Sentinel-Trap is a multi-vector Honeypot and Intrusion Detection System (IDS). It simulates vulnerable services to lure attackers, captures their behavior through advanced fingerprinting, and provides a real-time visual dashboard for threat intelligence.
-
-🚀 Key Features
-🕸️ Honeypot (The Trap)
-Multi-Protocol Simulation: Mimics HTTP, FTP (port 2121), and Telnet (port 2323) to catch diverse attack vectors.
-
-Intelligent Security Engine: Uses regex pattern matching to identify SQL Injection, XSS, Path Traversal, and Command Injection.
-
-Unique Fingerprinting: Generates MD5 hashes based on IP, User-Agent, and timestamps to track attacker identity across sessions.
-
-Automated Logging: Captures detailed event data including severity levels (CRITICAL to INFO) and raw payloads.
-
-📊 IDS Dashboard (The Watchtower)
-
-Real-time Visualization: Displays attacker IPs, attack counts, and session details in a clean web interface.   
-
-
-Geo-IP Integration: Automatically identifies the city and country of attackers using the IP-API service.   
+* Brute Force: Tracks login attempts on administrative accounts like admin or root.
 
 
-Payload Cleaning: Intelligently parses raw attack data to extract human-readable credentials (e.g., username:password).   
+## 📦 Installation & Setup
 
+### 1. Clone the Repository
+```bash
 
-Multi-Format Reporting: Generates professional attack summaries in PDF, HTML, or TXT formats.   
-
-🛠️ Tech Stack
-Component	Technology
-Backend	
-Python 3, Flask
-
-Protocols	Pyftpdlib (FTP), Socket (Telnet)
-Reporting	
-ReportLab (PDF generation)
-
-Security	MD5 Hashing, Regex Pattern Matching
-Data	
-JSON-based flat-file logging
-
-📦 Installation & Setup
-1. Clone the Repository
-
-git clone https://github.com/VadherHenil/Honeypot-IDS.git
+git clone [https://github.com/VadherHenil/Honeypot-IDS.git](https://github.com/VadherHenil/Honeypot-IDS.git)
 cd Honeypot-IDS
-
-2. Install Dependencies
-
 pip install -r requirements.txt
-
-3. Launch the Honeypot
-
 python honeypot.py
-
-Note: This starts the HTTP (5000), FTP (2121), and Telnet (2323) services.
-
-4. Launch the IDS Dashboard
-   
 python dashboard.py
-
-Note: Access the UI at http://localhost:7000.   
-
-🔍 Architecture Overview
-
-honeypot.py: The "Sensor" that listens for incoming connections and evaluates risk levels using a custom SecurityEngine.
-
-
-dashboard.py: The "Brain" that aggregates logs.txt, performs forensic analysis, and manages the reporting API.   
-
-
-logs.txt: The centralized database where all captured attack JSON objects are stored.   
-
-📋 Security Signatures
-The system monitors for several critical attack patterns:
-
-SQL Injection: Detects SELECT, UNION, DROP, and other SQL keywords.
-
-XSS: Identifies <script> tags, javascript: calls, and alert functions.
-
-Path Traversal: Flags attempts to access sensitive directories like /etc/ or /bin/.
-
-Brute Force: Tracks login attempts on administrative accounts like admin or root.
-
-📄 License
-This project is licensed under the MIT License.
-
-Disclaimer: This tool is for educational and research purposes only. Do not deploy on production networks without proper authorization.
