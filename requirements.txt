@@ -1,0 +1,6 @@
+Flask==3.0.3
+pyftpdlib==1.5.10
+requests==2.31.0
+werkzeug==3.0.1
+user-agents
+reportlab
