@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Control Panel v2.4.1</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f0f23 0%,#1a1a2e 100%);color:#e2e8f0;overflow-x:hidden;}
+        .header{background:rgba(30,41,59,0.95);backdrop-filter:blur(20px);padding:24px 40px;box-shadow:0 10px 40px rgba(0,0,0,0.4);position:sticky;top:0;z-index:100;border-bottom:1px solid rgba(148,163,184,0.1);}
+        .header-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+        .logo{font-size:28px;font-weight:700;background:linear-gradient(135deg,#3b82f6,#8b5cf6,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+        .user-menu{display:flex;align-items:center;gap:16px;}
+        .user-avatar{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-weight:600;color:white;font-size:16px;cursor:pointer;position:relative;}
+        .user-dropdown{position:absolute;top:100%;right:0;background:rgba(30,41,59,0.95);border-radius:12px;padding:12px 0;min-width:180px;box-shadow:0 20px 40px rgba(0,0,0,0.3);border:1px solid rgba(148,163,184,0.2);opacity:0;visibility:hidden;transform:translateY(-10px);transition:all 0.3s ease;}
+        .user-avatar:hover .user-dropdown{opacity:1;visibility:visible;transform:translateY(0);}
+        .dropdown-item{padding:12px 20px;color:#e2e8f0;text-decoration:none;display:block;font-size:14px;transition:background 0.2s ease;}
+        .dropdown-item:hover{background:rgba(59,130,246,0.2);}
+        .header-stats{display:flex;gap:32px;font-size:14px;color:#94a3b8;}
+        .stat-item strong{color:#10b981;font-weight:600;}
+        .main-content{padding:40px;max-width:1600px;margin:0 auto;}
+        .page-title{font-size:36px;font-weight:700;margin-bottom:8px;background:linear-gradient(135deg,#f8fafc,#e2e8f0);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+        .page-subtitle{color:#94a3b8;font-size:18px;margin-bottom:40px;}
+        .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;margin-bottom:48px;}
+        .stat-card{background:rgba(30,41,59,0.6);backdrop-filter:blur(20px);padding:36px 28px;border-radius:24px;border:1px solid rgba(148,163,184,0.1);transition:all 0.4s cubic-bezier(0.4,0,0.2,1);position:relative;overflow:hidden;}
+        .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#3b82f6,#8b5cf6,#10b981);}
+        .stat-card:hover{transform:translateY(-8px);box-shadow:0 25px 50px -12px rgba(0,0,0,0.4);border-color:rgba(59,130,246,0.3);}
+        .stat-icon{width:64px;height:64px;border-radius:16px;margin-bottom:20px;display:flex;align-items:center;justify-content:center;font-size:24px;}
+        .stat-primary{background:rgba(59,130,246,0.2);color:#3b82f6;}
+        .stat-success{background:rgba(16,185,129,0.2);color:#10b981;}
+        .stat-warning{background:rgba(245,158,11,0.2);color:#f59e0b;}
+        .stat-danger{background:rgba(239,68,68,0.2);color:#ef4444;}
+        .stat-value{font-size:42px;font-weight:700;margin-bottom:8px;line-height:1;}
+        .stat-label{color:#94a3b8;font-size:16px;font-weight:500;letter-spacing:0.025em;}
+        .content-grid{display:grid;grid-template-columns:2fr 1fr;gap:40px;margin-bottom:48px;}
+        .section{background:rgba(30,41,59,0.6);backdrop-filter:blur(20px);padding:36px;border-radius:24px;border:1px solid rgba(148,163,184,0.1);}
+        .section-title{font-size:22px;font-weight:600;margin-bottom:28px;color:#f8fafc;display:flex;align-items:center;gap:12px;}
+        .chart-container{height:300px;margin-bottom:24px;}
+        .upload-zone{border:2px dashed #475569;border-radius:16px;padding:48px 24px;text-align:center;transition:all 0.3s ease;cursor:pointer;background:rgba(71,85,105,0.1);}
+        .upload-zone:hover{border-color:#3b82f6;background:rgba(59,130,246,0.08);}
+        .upload-icon{font-size:56px;color:#94a3b8;margin-bottom:20px;display:block;}
+        .upload-text{color:#e2e8f0;font-size:18px;font-weight:500;margin-bottom:16px;}
+        .upload-subtext{color:#94a3b8;font-size:14px;}
+        .file-list{margin-top:24px;}
+        .file-item{display:flex;justify-content:space-between;align-items:center;padding:16px;background:rgba(71,85,105,0.3);border-radius:12px;margin-bottom:12px;}
+        .activity-list{max-height:500px;overflow-y:auto;}
+        .activity-item{display:flex;gap:16px;padding:20px;border-bottom:1px solid rgba(148,163,184,0.1);transition:background 0.2s ease;}
+        .activity-item:hover{background:rgba(59,130,246,0.05);}
+        .activity-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+        .activity-content h4{color:#f8fafc;margin-bottom:4px;font-size:15px;}
+        .activity-meta{display:flex;gap:16px;font-size:13px;color:#94a3b8;}
+        .btn{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:white;border:none;padding:12px 24px;border-radius:12px;font-weight:500;cursor:pointer;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);text-decoration:none;display:inline-flex;align-items:center;gap:8px;font-size:14px;}
+        .btn:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(59,130,246,0.4);}
+        .btn-secondary{background:rgba(71,85,105,0.5);color:#e2e8f0;}
+        .btn-secondary:hover{background:rgba(71,85,105,0.7);box-shadow:0 12px 30px rgba(71,85,105,0.3);}
+        @media (max-width:1024px){.content-grid{grid-template-columns:1fr;}}
+        @media (max-width:768px){.main-content{padding:24px 20px;}.stats-grid{grid-template-columns:repeat(auto-fit,minmax(250px,1fr));}.header-stats{flex-direction:column;gap:12px;align-items:flex-start;}}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-top">
+            <div class="logo">🚀 Control Panel v2.4.1</div>
+            <div class="user-menu">
+                <div class="user-avatar">
+                    Admin
+                    <div class="user-dropdown">
+                        <a href="#" class="dropdown-item">👤 Profile</a>
+                        <a href="#" class="dropdown-item">⚙️ Settings</a>
+                        <a href="/" class="dropdown-item">🚪 Sign Out</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="header-stats">
+            <div class="stat-item">🖥️ Server: <strong>Online</strong> | Uptime: 47d 12h</div>
+            <div class="stat-item">👥 Sessions: <strong>127</strong></div>
+            <div class="stat-item">💾 Storage: <strong>78%</strong></div>
+            <div class="stat-item">⚡ Load: <strong>23.45%</strong></div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div>
+            <h1 class="page-title">Dashboard Overview</h1>
+            <p class="page-subtitle">Welcome back, Administrator. Everything looks good today.</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon stat-primary">🧠</div>
+                <div class="stat-value">23.5%</div>
+                <div class="stat-label">CPU Usage</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-success">💾</div>
+                <div class="stat-value">6.2 GB</div>
+                <div class="stat-label">Memory Usage</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-warning">⚙️</div>
+                <div class="stat-value">247</div>
+                <div class="stat-label">Running Processes</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-danger">👥</div>
+                <div class="stat-value">127</div>
+                <div class="stat-label">Active Users</div>
+            </div>
+        </div>
+
+        <div class="content-grid">
+            <div class="section">
+                <div class="section-title">📊 System Performance</div>
+                <div class="chart-container">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;">
+                    <div style="text-align:center;padding:24px;background:rgba(16,185,129,0.1);border-radius:16px;">
+                        <div style="font-size:32px;font-weight:700;color:#10b981;">✓</div>
+                        <div style="color:#94a3b8;font-size:14px;">All services running</div>
+                    </div>
+                    <div style="text-align:center;padding:24px;background:rgba(245,158,11,0.1);border-radius:16px;">
+                        <div style="font-size:32px;font-weight:700;color:#f59e0b;">⚠</div>
+                        <div style="color:#94a3b8;font-size:14px;">Disk usage 78%</div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="section">
+                    <div class="section-title">📁 File Upload</div>
+                    <form method="POST" action="/admin/upload" enctype="multipart/form-data" style="margin-bottom:24px;">
+                        <div class="upload-zone" onclick="document.querySelector('input[type=file]').click()">
+                            <span class="upload-icon">📤</span>
+                            <div class="upload-text">Drop files here or click</div>
+                            <div class="upload-subtext">Supports all types up to 500MB</div>
+                            <input type="file" name="file" multiple style="display:none;" onchange="this.form.submit()">
+                        </div>
+                    </form>
+                    <div class="file-list">
+                        <div class="file-item">
+                            <span>📄 report-2024-01-15.pdf</span>
+                            <span style="color:#10b981;font-size:12px;">2 min ago</span>
+                        </div>
+                        <div class="file-item">
+                            <span>📄 backup.sql.gz</span>
+                            <span style="color:#10b981;font-size:12px;">15 min ago</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">🔧 Quick Actions</div>
+                    <div style="display:flex;flex-direction:column;gap:12px;">
+                        <a href="#" class="btn">🔄 Restart Services</a>
+                        <a href="#" class="btn btn-secondary">📊 View Logs</a>
+                        <a href="#" class="btn btn-secondary">⚙️ Settings</a>
+                        <a href="#" class="btn btn-secondary">👥 Users</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">📋 Recent Activity</div>
+            <div class="activity-list">
+                <div class="activity-item">
+                    <div class="activity-icon" style="background:rgba(16,185,129,0.2);color:#10b981;">✅</div>
+                    <div class="activity-content">
+                        <h4>Backup completed successfully</h4>
+                        <div class="activity-meta">
+                            <span>mysql-backup.sql.gz</span>
+                            <span>2 min ago</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="activity-item">
+                    <div class="activity-icon" style="background:rgba(245,158,11,0.2);color:#f59e0b;">⚠</div>
+                    <div class="activity-content">
+                        <h4>Disk space warning</h4>
+                        <div class="activity-meta">
+                            <span>/var/log</span>
+                            <span>5 min ago</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="activity-item">
+                    <div class="activity-icon" style="background:rgba(59,130,246,0.2);color:#3b82f6;">👤</div>
+                    <div class="activity-content">
+                        <h4>User login successful</h4>
+                        <div class="activity-meta">
+                            <span>admin@server</span>
+                            <span>12 min ago</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="activity-item">
+                    <div class="activity-icon" style="background:rgba(239,68,68,0.2);color:#ef4444;">❌</div>
+                    <div class="activity-content">
+                        <h4>Failed login attempt</h4>
+                        <div class="activity-meta">
+                            <span>192.168.1.100</span>
+                            <span>25 min ago</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('performanceChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['1h ago','50m','40m','30m','20m','10m','Now'],
+                datasets: [{
+                    label: 'CPU Usage',
+                    data: [15,22,18,28,25,20,23.5],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59,130,246,0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {legend: {display: false}},
+                scales: {
+                    y: {beginAtZero: true,max: 100,grid: {color: 'rgba(148,163,184,0.1)'}},
+                    x: {grid: {color: 'rgba(148,163,184,0.1)'}}
+                }
+            }
+        });
+    </script>
+</body>
+</html>
