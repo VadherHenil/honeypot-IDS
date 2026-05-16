@@ -1,242 +1,249 @@
-import os, time, threading, json, re, socket
-from flask import Flask, request, render_template, jsonify
+import os
+import time
+import threading
+import queue
+import re
+import socket
+import sqlite3
+import hashlib
+import json
+from flask import Flask, request, render_template
 from pyftpdlib.handlers import FTPHandler
 from pyftpdlib.servers import FTPServer
-from pyftpdlib.authorizers import DummyAuthorizer
-from collections import defaultdict
-import hashlib
+from pyftpdlib.authorizers import DummyAuthorizer, AuthenticationFailed
 
 app = Flask(__name__)
-LOG_FILE = os.path.join(os.getcwd(), "logs.txt")
+DB_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "honeypot_events.db"))
 
-# --- MD5 FINGERPRINT GENERATOR ---
-def generate_fingerprint(ip, user_agent, timestamp=None):
-    """Generate MD5 fingerprint like 294202597930eea63be68cc03fa5b0f8"""
-    if timestamp is None:
-        timestamp = str(int(time.time()))
-    
-    # Create unique fingerprint: IP + UA + timestamp
-    fingerprint_input = f"{ip}:{user_agent}:{timestamp}"
-    return hashlib.md5(fingerprint_input.encode()).hexdigest()
+# --- THREAD-SAFE LOGGING ASYNC WORKER QUEUE ---
+log_queue = queue.Queue()
+
+def log_worker():
+    """Background worker that continuously processes and writes logs sequentially."""
+    while True:
+        log_data = log_queue.get()
+        if log_data is None:
+            break
+        ip, timestamp, detected_type, severity, payload, source, user_agent, fingerprint, score = log_data
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("""
+                    INSERT INTO attack_logs (ip, timestamp, type, severity, payload, source, user_agent, fingerprint, score)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (ip, timestamp, detected_type, severity, payload, source, user_agent, fingerprint, score))
+                conn.commit()
+        except Exception as e:
+            print(f"[DB LOG ERROR] {e}")
+        finally:
+            log_queue.task_done()
+
+# Start the dedicated background writer thread
+threading.Thread(target=log_worker, daemon=True).start()
+
+# --- SQLITE PERSISTENT STORAGE INITIALIZATION ---
+def init_db():
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS attack_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip TEXT,
+                timestamp TEXT,
+                type TEXT,
+                severity TEXT,
+                payload TEXT,
+                source TEXT,
+                user_agent TEXT,
+                fingerprint TEXT,
+                score INTEGER
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ip ON attack_logs(ip);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON attack_logs(timestamp);")
+        conn.commit()
 
 # --- SECURITY ENGINE ---
 class SecurityEngine:
     def __init__(self):
-        self.request_counts = defaultdict(list)
-        self.lock = threading.Lock()
-        self.client_fingerprints = defaultdict(list)
+        self.weights = {
+            "BRUTE_FORCE": 15,
+            "PATH_TRAVERSAL": 25,
+            "SQL_INJECTION": 20,
+            "XSS_ATTACK": 15,
+            "SUSPICIOUS_COMMAND": 30,
+            "GENERIC_SCAN": 5
+        }
         self.signatures = {
-            "SQL_INJECTION": {"pattern": r"(?i)(select|union|insert|delete|drop|;)", "severity": "CRITICAL"},
-            "XSS_ATTACK": {"pattern": r"(?i)(<script|javascript:|alert|onload)", "severity": "HIGH"},
-            "PATH_TRAVERSAL": {"pattern": r"(?i)(\.\./|/\.\.|\/etc\/|\/bin\/|\/root\/)", "severity": "HIGH"},
-            "COMMAND_INJECTION": {"pattern": r"(?i)(;|&&|whoami|cat\s|/bin/)", "severity": "CRITICAL"},
-            "LDAP_INJECTION": {"pattern": r"(?i)(\*\$|\s*\$|\s*&\s*\$|\\\\$)", "severity": "HIGH"},
-            "SSRF": {"pattern": r"(?i)(127\.0\.0\.1|localhost|0\.0\.0\.0)", "severity": "HIGH"},
-            "BRUTE_FORCE": {"pattern": r"(?i)(admin|root|123456|ftp|user)", "severity": "MEDIUM"}
+            "SQL_INJECTION": r"(?i)(select|union|insert|delete|drop|' or '1'='1|--|#)",
+            "PATH_TRAVERSAL": r"(?i)(\.\.\/|\/\.\.|/etc/passwd|/etc/shadow|/bin/sh|/windows/win.ini)",
+            "XSS_ATTACK": r"(?i)(<script|javascript:|alert\(|onerror|onload=)",
         }
 
-    def is_rate_limited(self, ip):
-        with self.lock:
-            now = time.time()
-            self.request_counts[str(ip)] = [t for t in self.request_counts[str(ip)] if now - t < 1.0]
-            self.request_counts[str(ip)].append(now)
-            return len(self.request_counts[str(ip)]) > 20
+    def generate_fingerprint(self, ip, user_agent):
+        fingerprint_input = f"{ip}:{user_agent}"
+        return hashlib.md5(fingerprint_input.encode()).hexdigest()
 
-    def evaluate_risk(self, payload, service):
-        try:
-            p_check = str(payload).upper()
-            for name, info in self.signatures.items():
-                if re.search(info["pattern"], p_check):
-                    return name, info["severity"]
-        except: pass
-        if "LOGIN" in service: return "BRUTE_FORCE", "MEDIUM"
-        return "ACTIVITY", "INFO"
+    def evaluate_and_log(self, ip, source, payload, user_agent="Unknown/Direct", forced_type=None):
+        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+        detected_type = "GENERIC_SCAN"
+        score = self.weights["GENERIC_SCAN"]
 
-    def log_event(self, ip, service, status, payload, user_agent="Unknown"):
-        try:
-            if self.is_rate_limited(ip): return False
-            category, severity = self.evaluate_risk(payload, service)
-            
-            timestamp = str(int(time.time() * 1000))
-            fingerprint = generate_fingerprint(ip, user_agent, timestamp)
-            
-            entry = {
-                "time": time.strftime('%Y-%m-%d %H:%M:%S'),
-                "ip": str(ip) if ip else "UNKNOWN",
-                "type": category,
-                "payload": f"[{status}] {payload}",
-                "severity": severity,
-                "source": service,
-                "fingerprint": fingerprint,
-                "user_agent": user_agent
-            }
-            
-            with open(LOG_FILE, "a") as f:
-                f.write(json.dumps(entry) + "\n")
-            return True
-        except:
-            return False
+        if forced_type:
+            detected_type = forced_type
+            score = self.weights.get(forced_type, 10)
+        else:
+            payload_str = str(payload).lower()
+            for attack_name, pattern in self.signatures.items():
+                if re.search(pattern, payload_str):
+                    detected_type = attack_name
+                    score = self.weights[attack_name]
+                    break
+
+        if score >= 25:
+            severity = "CRITICAL"
+        elif score >= 15:
+            severity = "HIGH"
+        else:
+            severity = "MEDIUM"
+
+        fingerprint = self.generate_fingerprint(ip, user_agent)
+        
+        # FIXED: Pass logs to the thread-safe queue instantly instead of blocking pyftpdlib
+        log_queue.put((ip, timestamp, detected_type, severity, str(payload), source, user_agent, fingerprint, score))
 
 engine = SecurityEngine()
 
-# --- HTTP ROUTES (UNCHANGED) ---
-@app.route("/", methods=["GET", "POST"])
-def index():
-    ip = request.headers.get('CF-Connecting-IP', request.remote_addr)
-    
-    if request.method == "POST":
-        username = request.form.get("username", "")
-        password = request.form.get("password", "")
-        
-        user_agent = request.headers.get('User-Agent', 'Unknown')
-        
-        if username == "admin" and password == "1234":
-            engine.log_event(ip, "HTTP_LOGIN", "SUCCESS", f"User: {username}, Password: {password}", user_agent)
-            return render_template("admin.html")
-        else:
-            engine.log_event(ip, "HTTP_LOGIN", "FAILED", f"User: {username}, Password: {password}", user_agent)
-            
+# --- PROTOCOL SERVICE 1: HTTP CORE HONEYPOT TRAP ---
+@app.route('/', defaults={'path': ''}, methods=['GET', 'POST'])
+@app.route('/<path:path>', methods=['GET', 'POST'])
+def http_trap(path):
+    ip = request.remote_addr
     user_agent = request.headers.get('User-Agent', 'Unknown')
-    engine.log_event(ip, "HTTP_PAGEVIEW", "GET", request.path, user_agent)
-    return render_template("login.html")
+    payload_elements = {
+        "uri_path": f"/{path}",
+        "get_params": dict(request.args),
+        "post_data": dict(request.form) if request.method == 'POST' else {}
+    }
+    engine.evaluate_and_log(ip, "HTTP_SERVER", json.dumps(payload_elements), user_agent)
+    return render_template('login.html'), 200
 
-@app.route("/api/data")
-def api_data():
-    res = {"ips": {}, "stats": {"total": 0}}
-    if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "r") as f:
-            for line in f:
-                try:
-                    log = json.loads(line.strip())
-                    ip_addr = log["ip"]
-                    if ip_addr not in res["ips"]:
-                        res["ips"][ip_addr] = {
-                            "count": 0, 
-                            "logs": [],
-                            "fingerprint": log.get("fingerprint", "Unknown"),
-                            "user_agent": log.get("user_agent", "Unknown")
-                        }
-                    res["ips"][ip_addr]["count"] += 1
-                    res["ips"][ip_addr]["logs"].append(log)
-                    res["stats"]["total"] += 1
-                except: continue
-    return jsonify(res)
-
-# --- TELNET SECTION ---
-telnet_commands = defaultdict(list)
-
-def start_telnet():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        s.bind(('0.0.0.0', 2323))
-        s.listen(10)
-        print("✅ TELNET READY - port 2323")
-    except Exception as e:
-        print(f"❌ TELNET ERROR: {e}")
-        return
-
-    while True:
-        c, a = s.accept()
-        def handle(conn, addr):
-            ip = addr[0]
-            try:
-                conn.send(b"\r\nUsername: ")
-                u = conn.recv(1024).decode(errors='ignore').strip()
-                conn.send(b"Password: ")
-                p = conn.recv(1024).decode(errors='ignore').strip()
-                
-                engine.log_event(ip, "TELNET_LOGIN", "FAILED", f"User: {u}, Password: {p}", "TelnetClient")
-                
-                if u == "admin" and p == "1234":
-                    engine.log_event(ip, "TELNET_LOGIN", "SUCCESS", f"User: {u}, Password: {p}", "TelnetClient")
-                    conn.send(b"Welcome admin!\r\n")
-                    while True:
-                        conn.send(b"$ ")
-                        d = conn.recv(1024).decode(errors='ignore').strip()
-                        if not d or d.lower() in ["exit", "quit"]:
-                            break
-                        telnet_commands[ip].append(d)
-                        engine.log_event(ip, "TELNET_COMMAND", "EXEC", d, "TelnetClient")
-                        conn.send(b"command not found\r\n")
-                else:
-                    conn.send(b"Login failed\r\n")
-            except Exception as e:
-                engine.log_event(ip, "TELNET", "ERROR", f"Connection error: {str(e)}", "TelnetClient")
-            finally: 
-                conn.close()
-        threading.Thread(target=handle, args=(c, a), daemon=True).start()
-
-# --- FTP SECTION ---
-class UltimateFTPHandler(FTPHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.client_ip = None
-        self.session_id = None
-        self.ftp_commands = []
-        self._captured_pass = None
-
-    def on_connect(self):
-        self.client_ip = self.remote_ip
-        self.session_id = f"{self.client_ip}_{int(time.time())}"
-        engine.log_event(self.client_ip, "FTP_CONNECT", "START", f"Session: {self.session_id}", "FTPClient")
-        super().on_connect()
-
-    def ftp_PASS(self, password):
-        self._captured_pass = password
-        return super().ftp_PASS(password)
-
-    def on_login(self, username):
-        full_p = getattr(self, '_captured_pass', 'N/A')
-        engine.log_event(self.client_ip, "FTP_LOGIN", "SUCCESS", f"User: {username}, Password: {full_p}", "FTPClient")
-        return super().on_login(username)
-
-    def on_login_failed(self, username, password):
-        engine.log_event(self.client_ip, "FTP_LOGIN", "FAILED", f"User: {username}, Password: {password}", "FTPClient")
-        return super().on_login_failed(username, password)
-
-    def raw_data_in(self, data):
+# --- PROTOCOL SERVICE 2: FTP ADVANCED PORT DECEPTION ---
+class LoggingAuthorizer(DummyAuthorizer):
+    def validate_authentication(self, username, password, handler):
         try:
-            cmd_line = data.decode('utf-8', errors='ignore').rstrip('\r\n')
-            if cmd_line:
-                parts = cmd_line.split(None, 1)
-                cmd = parts[0].upper()
-                args = parts[1] if len(parts) > 1 else ""
-                self.ftp_commands.append(f"{cmd} {args}".strip())
+            super().validate_authentication(username, password, handler)
+        except AuthenticationFailed:
+            # FIXED: Queued immediately before thread teardown occurs
+            handler.log_action(
+                "FTP_SERVER", 
+                f"Failed authentication attempt - Username: {username} | Password: {password}", 
+                "BRUTE_FORCE"
+            )
+            raise
+        else:
+            # FIXED: Queued immediately upon successful authentication
+            handler.log_action(
+                "FTP_SERVER", 
+                f"Successful exploit entry - Username: {username} | Password: {password}", 
+                "BRUTE_FORCE"
+            )
+
+class MonitoredFTPHandler(FTPHandler):
+    def log_action(self, source, payload, forced_type):
+        engine.evaluate_and_log(self.remote_ip, source, payload, forced_type=forced_type)
+
+    def process_command(self, cmd, *args, **kwargs):
+        cmd_upper = cmd.upper()
+        if cmd_upper not in ['USER', 'PASS']:
+            arg_str = str(args[0]) if args and args[0] else ""
+            payload_str = f"[COMMAND] {cmd_upper} {arg_str}".strip()
+            
+            if cmd_upper in ['SYST', 'FEAT', 'PWD', 'TYPE', 'PASV', 'EPSV', 'PORT']:
+                current_threat_type = "GENERIC_SCAN"
+            else:
+                current_threat_type = "SUSPICIOUS_COMMAND"
                 
-                if cmd != "PASS":
-                    status = "POST_AUTH" if self.authenticated else "PRE_AUTH"
-                    engine.log_event(
-                        self.client_ip, 
-                        f"FTP_{cmd}", 
-                        status, 
-                        f"Command: {cmd}, Args: {args}",
-                        "FTPClient"
-                    )
-        except Exception as e:
-            engine.log_event(self.client_ip, f"FTP_ERROR", "PARSE", f"Command parse error: {str(e)}", "FTPClient")
-        return super().raw_data_in(data)
+            self.log_action("FTP_INTERACTIVE", payload_str, current_threat_type)
+            
+        super().process_command(cmd, *args, **kwargs)
 
-    def on_disconnect(self):
-        engine.log_event(self.client_ip, "FTP_SESSION", "END", f"Session: {self.session_id}, Commands: {len(self.ftp_commands)}", "FTPClient")
-        super().on_disconnect()
+    def on_incomplete_file_received(self, file):
+        if os.path.exists(file):
+            os.remove(file)
 
-def start_ftp():
+def start_ftp_server():
     os.makedirs("fake_fs", exist_ok=True)
-    authorizer = DummyAuthorizer()
-    creds = [("admin", "1234"), ("ftp", "1234"), ("user", "1234"), ("root", "1234")]
-    for user, pwd in creds:
-        authorizer.add_user(user, pwd, "fake_fs", perm="elradfmwMT")
-    
-    handler = UltimateFTPHandler
+    authorizer = LoggingAuthorizer()
+    creds = [("admin", "1234"), ("root", "root"), ("user", "password")]
+    for u, p in creds:
+        authorizer.add_user(u, p, "fake_fs", perm="elradfmw")
+        
+    handler = MonitoredFTPHandler
     handler.authorizer = authorizer
-    handler.banner = "220 FTP Server Ready"
+    handler.banner = "220 FTP Standard Authentication Daemon Ready."
     server = FTPServer(("0.0.0.0", 2121), handler)
     server.serve_forever()
 
-# --- MAIN ---
+# --- PROTOCOL SERVICE 3: TELNET COMMAND EMULATION ---
+def handle_telnet_session(client_socket, addr):
+    ip = addr[0]
+    client_socket.settimeout(30.0)
+    try:
+        client_socket.send(b"Ubuntu 22.04.3 LTS\n\rserver1 login: ")
+        username = client_socket.recv(1024).decode('utf-8', errors='ignore').strip()
+        client_socket.send(b"Password: ")
+        password = client_socket.recv(1024).decode('utf-8', errors='ignore').strip()
+
+        engine.evaluate_and_log(
+            ip, 
+            "TELNET_SHELL", 
+            f"Terminal Authentication Input - User: {username} | Pass: {password}", 
+            forced_type="BRUTE_FORCE"
+        )
+        
+        client_socket.send(b"\n\rWelcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-88-generic x86_64)\n\rroot@production-srv:~# ")
+
+        while True:
+            command_bytes = client_socket.recv(1024)
+            if not command_bytes:
+                break
+            command = command_bytes.decode('utf-8', errors='ignore').strip()
+            if command.lower() in ["exit", "logout", "quit"]:
+                break
+            if not command:
+                client_socket.send(b"root@production-srv:~# ")
+                continue
+
+            engine.evaluate_and_log(ip, "TELNET_INTERACTIVE", f"Executed shell input: '{command}'", forced_type="SUSPICIOUS_COMMAND")
+            responses = {
+                "ls": "bin  boot  dev  etc  home  lib  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var",
+                "whoami": "root",
+                "id": "uid=0(root) gid=0(root) groups=0(root)",
+                "pwd": "/root"
+            }
+            response_output = responses.get(command.lower(), f"bash: {command}: command not found")
+            client_socket.send(f"{response_output}\n\rroot@production-srv:~# ".encode('utf-8'))
+    except Exception:
+        pass
+    finally:
+        client_socket.close()
+
+def start_telnet_server():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("0.0.0.0", 2323))
+    server.listen(50)
+    while True:
+        client, addr = server.accept()
+        threading.Thread(target=handle_telnet_session, args=(client, addr), daemon=True).start()
+
 if __name__ == "__main__":
-    print("🚨 HONEYPOT STARTING - MD5 FINGERPRINT + FULL UA")
-    threading.Thread(target=start_ftp, daemon=True).start()
-    threading.Thread(target=start_telnet, daemon=True).start()
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    print("HoneyPot Services running Successfully Access it on:-")
+    print("HTTP :- 5000")
+    print("FTP :- 2121")
+    print("TELNET :- 2323")
+    init_db()
+    threading.Thread(target=start_ftp_server, daemon=True).start()
+    threading.Thread(target=start_telnet_server, daemon=True).start()
+    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
