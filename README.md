@@ -4,9 +4,11 @@
 [![Flask](https://img.shields.io/badge/Flask-3.0.3-000000.svg?style=for-the-badge&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-[cite_start]**Sentinel-Trap** is a sophisticated multi-vector **Honeypot** and **Intrusion Detection System (IDS)**. [cite_start]It simulates vulnerable services to lure attackers, captures their behavior through advanced fingerprinting, and provides a real-time visual dashboard for threat intelligence.
+**Sentinel-Trap** is a sophisticated multi-vector **Honeypot** and **Intrusion Detection System (IDS)**. It simulates vulnerable services to lure attackers, captures their behavior through advanced fingerprinting, and provides a real-time visual dashboard for threat intelligence.
 
 ---
+
+## Version : 4.0
 
 ## 🚀 Key Features
 
@@ -28,11 +30,11 @@
 
 | Component | Technology |
 | :--- | :--- |
-| **Backend** | [cite_start]Python 3, Flask  |
+| **Backend** | Python 3, Flask  |
 | **Protocols** | Pyftpdlib (FTP), Socket (Telnet) |
-| **Reporting** | [cite_start]ReportLab (PDF generation)  |
+| **Reporting** | ReportLab (PDF generation)  |
 | **Security** | MD5 Hashing, Regex Pattern Matching |
-| **Data** | [cite_start]JSON-based flat-file logging  |
+| **Data** | JSON-based flat-file logging  |
 
 ---
 ## 🔍 Architecture Overview
